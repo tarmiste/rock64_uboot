@@ -1,0 +1,76 @@
+#!/bin/bash -e
+#
+echo "WARNING This is a WIP "
+
+#
+# If needed, uncomment to get repositories
+#
+#git clone https://www.github.com/ayufan-rock64/rkbin
+#git clone https://www.github.com/ayufan-rock64/linux-u-boot
+#mv linux-u-boot u-boot
+
+#
+# Set environment as needed for cross compiling uboot
+#
+. ./setenv
+
+#
+# Setup environment as needed for packaging images
+#
+LOCALPATH=$(pwd)
+OUT=${LOCALPATH}/out
+TOOLPATH=${LOCALPATH}/rkbin/tools
+PATH=$PATH:$TOOLPATH
+mkdir -p ${OUT}/u-boot/
+
+#
+# Build u-boot
+#
+. ./setenv
+cd u-boot
+make mrproper
+make rock64-rk3328_defconfig
+#make menuconfig    # uncomment for manual configuration.
+make all
+
+#
+# Package uboot.img file
+#
+$TOOLPATH/loaderimage --pack --uboot ./u-boot-dtb.bin uboot.img 0x200000
+mv uboot.img ${OUT}/u-boot/
+
+#
+# Package idbloader.img file
+#
+dd if=../rkbin/rk33/rk3328_ddr_786MHz_v1.06.bin of=DDRTEMP bs=4 skip=1
+tools/mkimage -n rk3328 -T rksd -d DDRTEMP idbloader.img
+cat ../rkbin/rk33/rk3328_miniloader_v2.43.bin >> idbloader.img
+mv idbloader.img ${OUT}/u-boot/
+cp ../rkbin/rk33/rk3328_loader_ddr786_v1.06.243.bin ${OUT}/u-boot/
+rm -f DDRTEMP
+
+#
+# Package trust.img file
+#
+cat >trust.ini <<EOF
+[VERSION]
+MAJOR=1
+MINOR=2
+[BL30_OPTION]
+SEC=0
+[BL31_OPTION]
+SEC=1
+PATH=../rkbin/rk33/rk3328_bl31_v1.34.bin
+ADDR=0x10000
+[BL32_OPTION]
+SEC=0
+[BL33_OPTION]
+SEC=0
+[OUTPUT]
+PATH=trust.img
+EOF
+
+$TOOLPATH/trust_merger trust.ini
+mv trust.img ${OUT}/u-boot/
+
+echo "Images can be found in ${OUT}/u-boot/"
